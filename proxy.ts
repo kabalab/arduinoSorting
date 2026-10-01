@@ -5,6 +5,8 @@ import { SESSION_COOKIE, readSessionToken } from "@/src/auth/token";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (pathname === "/session/end") return NextResponse.next();
+
   let session = null;
   try {
     session = await readSessionToken(request.cookies.get(SESSION_COOKIE)?.value);

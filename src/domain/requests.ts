@@ -1,5 +1,5 @@
 import { isDateOnly, todayDateString } from "./overdue";
-import { canRequestItem, canReturnRequest, permissionError } from "./permissions";
+import { canDecideRequest, canRequestItem, canReturnRequest, permissionError } from "./permissions";
 import {
   fail,
   lineOutstanding,
@@ -116,7 +116,7 @@ export function submitRequest(
 
   const next = structuredClone(store);
   const requestId = crypto.randomUUID();
-  const automatic = group.approvalMode === "automatic";
+  const automatic = actor.approvalMode === "automatic";
   const stamped = now.toISOString();
   const lines = automatic
     ? checkoutLines(next, merged, actor.id, requestId, now)
@@ -187,10 +187,10 @@ export function approveRequest(
   requestId: string,
   now: Date,
 ): Result<StoreData> {
-  const denied = permissionError(actor);
-  if (denied) return fail(denied);
   const existing = store.requests.find((request) => request.id === requestId);
   if (!existing) return fail("That request was not found.");
+  const denied = canDecideRequest(actor, existing);
+  if (denied) return fail(denied);
   if (existing.status !== "pending") return fail("Only a pending request can be approved.");
 
   const merged = new Map(existing.lines.map((line) => [line.itemId, line.quantityRequested]));
@@ -215,10 +215,10 @@ export function denyRequest(
   requestId: string,
   reason: string,
 ): Result<StoreData> {
-  const denied = permissionError(actor);
-  if (denied) return fail(denied);
   const existing = store.requests.find((request) => request.id === requestId);
   if (!existing) return fail("That request was not found.");
+  const denied = canDecideRequest(actor, existing);
+  if (denied) return fail(denied);
   if (existing.status !== "pending") return fail("Only a pending request can be denied.");
 
   const next = structuredClone(store);

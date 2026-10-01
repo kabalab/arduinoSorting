@@ -10,7 +10,7 @@ const guest: HelpSection[] = [
     heading: "Access codes",
     paragraphs: [
       "An access code is the private pass for one person. It is not your name and it is not an account password you invent on this screen.",
-      "Ask an administrator if you do not have a code. Codes are checked on the server and are never saved in this browser.",
+      "Ask an administrator if you do not have a code. The code is checked on the server. This browser stores a signed session, not the code itself.",
     ],
   },
   {
@@ -22,13 +22,14 @@ const guest: HelpSection[] = [
   {
     heading: "Staying signed in",
     paragraphs: [
-      "A successful Continue keeps you signed in on this browser. You can close the tab and come back without entering the code again until you log out, switch accounts, or the session expires.",
+      "A successful Continue keeps you signed in on this browser. You can refresh or close the tab and come back without entering the code again, as long as that code still works.",
+      "If an administrator rotates or removes your code, the next page logs you out and brings you back here.",
     ],
   },
   {
-    heading: "Log out or switch accounts",
+    heading: "Log out",
     paragraphs: [
-      "Log out and Switch account both end the session and bring you back to this screen. Use Switch account when another person needs to sign in on the same browser.",
+      "Log out ends the session and brings you back to this screen. Use it when another person needs to sign in on the same browser.",
     ],
   },
 ];
@@ -58,22 +59,30 @@ const member: HelpSection[] = [
   {
     heading: "Statuses",
     paragraphs: [
-      "Pending means an administrator still needs to approve the request. Checked Out means the items are with you. Returned means every item is back. Denied includes the reason when one was given. Cancelled means you withdrew a pending request.",
+      "Pending means an administrator or a group admin still needs to approve the request. Checked Out means the items are with you. Returned means every item is back. Denied includes the reason when one was given. Cancelled means you withdrew a pending request.",
       "Overdue appears when a checked-out request is past its expected return date and something is still out. The original record is not erased.",
     ],
   },
   {
-    heading: "Your group's approval setting",
+    heading: "Your approval setting",
     paragraphs: [
-      "If your group is set to automatic approval, a request checks out as soon as you submit it and the supplies are available.",
-      "If your group requires approval, the request stays Pending until an administrator approves it. Approval checks the items out immediately. There is no separate step to mark them as taken.",
+      "If your setting is automatic, a request checks out as soon as you submit it and the supplies are available.",
+      "If your setting requires approval, the request stays Pending until an administrator or a group admin approves it. Approval checks the items out immediately. There is no separate step to mark them as taken.",
     ],
   },
   {
     heading: "Checked out and returns",
     paragraphs: [
       "Checked out shows supplies you still have, and any items an administrator checked out for your group.",
-      "If your group allows members to mark items returned, you can record a return for your own loans and for those group checkouts. Otherwise an administrator records the return.",
+      "If you are allowed to mark items returned, you can record a return for your own loans and for those group checkouts. Otherwise an administrator records the return.",
+    ],
+  },
+  {
+    heading: "Group admins",
+    paragraphs: [
+      "Some people have a Group page. It lists the people in their group and that group's pending requests.",
+      "A group admin can add a person, and can see, rename, or rotate a code for anyone in the group, including their own. They cannot remove a code.",
+      "Settings on another person changes that person's approval mode, return permission, and group admin setting. They can only give permissions they have themselves. If their own requests require approval, they cannot turn on automatic approval for someone else. They cannot change their own settings.",
     ],
   },
 ];
@@ -104,22 +113,23 @@ const admin: HelpSection[] = [
   {
     heading: "Full and partial returns",
     paragraphs: [
-      "Checked out lists open loans, including how many days overdue. Mark Returned records the quantities that actually came back. You can always mark any ticket returned. If a group allows it, members of that group can mark returns for their own loans and for checkouts an administrator made for them.",
+      "Checked out lists open loans, including how many days overdue. Mark Returned records the quantities that actually came back. You can always mark any ticket returned. A person who is allowed to mark items returned can record a return for their own loans and for checkouts an administrator made for their group.",
       "A partial return increases stock only by that amount and leaves the request Checked Out. When every line is fully returned, the request becomes Returned.",
     ],
   },
   {
     heading: "Groups and access codes",
     paragraphs: [
-      "Groups have a name and an approval mode. Automatic means requests check out on submit when stock allows. Required means they wait for approval. Each group also has a checkbox for whether members can mark items returned.",
+      "Groups have a name. Each person has their own approval mode, return permission, and group admin setting. Open Settings on that person's code to change them. New people start with approval required and cannot mark items returned.",
+      "A group admin can add people and can see, rename, or rotate codes in their own group, including their own. They cannot remove a code. Rotating or removing a code logs that person out the next time they open a page.",
       "Access codes live on the group. Each code has a name so history can say who checked something out. See current shows the code that is saved now. Rotate replaces it and shows the new one. A code created before this was saved only as a hash; rotate it once to make it viewable.",
-      "The Administrators group signs every code in as an administrator. That setting cannot be turned off, and the last code in that group cannot be removed.",
+      "The Administrators group signs every code in as an administrator. Those codes have no permission settings. The original administrator can view and change every administrator code. Another administrator can add administrators and can rename codes, but cannot view or change the original administrator's code, and cannot change their own code.",
     ],
   },
   {
     heading: "Check out for a group",
     paragraphs: [
-      "On Checked out, choose any group, the quantities, and an expected return date. That checks the items out immediately, even when the group normally needs approval, and even when the item is hidden from that group. The supplies still have to be available.",
+      "On Checked out, choose any group, the quantities, and an expected return date. That checks the items out immediately, even when people in that group normally need approval, and even when the item is hidden from that group. The supplies still have to be available.",
       "The ticket is filed under the group you chose and recorded as created by you. Members of that group see it with their own loans.",
     ],
   },

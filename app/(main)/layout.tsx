@@ -8,7 +8,6 @@ const memberNav = [
   { href: "/cart", label: "Request cart" },
   { href: "/requests", label: "My requests" },
   { href: "/checked-out", label: "Checked out" },
-  { href: "/account", label: "Account" },
 ];
 
 const adminNav = [
@@ -29,7 +28,13 @@ export default async function MainLayout({ children }: { children: ReactNode }) 
         siteName={store.settings.siteName}
         personName={user.displayName}
         audience={user.role}
-        items={user.role === "admin" ? adminNav : memberNav}
+        items={
+          user.role === "admin"
+            ? adminNav
+            : user.groupAdmin
+              ? [...memberNav, { href: "/group", label: "Group" }]
+              : memberNav
+        }
       >
         {children}
       </AppShell>

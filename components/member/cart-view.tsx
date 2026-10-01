@@ -34,9 +34,9 @@ export function CartView({ user, items, group }: { user: User; items: Item[]; gr
     now,
   );
   const note =
-    group.approvalMode === "automatic"
-      ? "Your group approves requests automatically. This will check out as soon as you submit it, if the supplies are still available."
-      : "Your group requires approval. This request will stay pending until an administrator approves it.";
+    user.approvalMode === "automatic"
+      ? "Your requests check out as soon as you submit them, if the supplies are still available."
+      : "Your requests stay pending until an administrator or a group admin approves them.";
 
   if (cart.lines.length === 0) {
     return <EmptyState title="Your request is empty" body="Add supplies from the catalog. The cart stays in this tab until you submit or refresh." />;

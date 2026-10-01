@@ -7,9 +7,9 @@ export async function getSession(): Promise<SessionToken | null> {
   return readSessionToken(jar.get(SESSION_COOKIE)?.value);
 }
 
-export async function setSession(userId: string, role: Role): Promise<void> {
+export async function setSession(userId: string, role: Role, codeHash: string): Promise<void> {
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, await createSessionToken(userId, role), sessionCookieOptions);
+  jar.set(SESSION_COOKIE, await createSessionToken(userId, role, codeHash), sessionCookieOptions);
 }
 
 export async function clearSession(): Promise<void> {

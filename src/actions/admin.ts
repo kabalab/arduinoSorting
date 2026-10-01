@@ -6,11 +6,13 @@ import { getRepository } from "@/src/data";
 import {
   addAccessCode as addAccessCodeRecord,
   createGroup,
+  manageCodeError,
   removeAccessCode as removeAccessCodeRecord,
   renameAccessCode as renameAccessCodeRecord,
   replaceAccessCode,
   updateGroup,
   updateSettings,
+  updateUserPermissions,
 } from "@/src/domain";
 import { loadContext } from "@/src/server/context";
 import type { ActionResult, CodeResult } from "./result";
@@ -24,8 +26,6 @@ export async function saveGroup(_previous: ActionResult | null, formData: FormDa
   const groupId = String(formData.get("groupId") ?? "");
   const input = {
     name: String(formData.get("name") ?? ""),
-    approvalMode: String(formData.get("approvalMode") ?? ""),
-    membersCanReturn: formData.get("membersCanReturn") === "yes",
   };
   const result = await getRepository().update<ActionResult>((store) => {
     const actor = store.users.find((entry) => entry.id === user.id);
@@ -67,7 +67,9 @@ export async function revealAccessCode(userId: string): Promise<CodeResult> {
   const { user } = await loadContext();
   const store = await getRepository().read();
   const actor = store.users.find((entry) => entry.id === user.id);
-  if (!actor || actor.role !== "admin") return { ok: false, error: "You do not have permission to do that." };
+  if (!actor) return { ok: false, error: "Your session expired. Sign in again." };
+  const denied = manageCodeError(store, actor, userId, "reveal");
+  if (denied) return { ok: false, error: denied };
   const person = store.users.find((entry) => entry.id === userId);
   if (!person) return { ok: false, error: "That person was not found." };
   const credential = store.credentials.find((entry) => entry.userId === userId);
@@ -134,6 +136,25 @@ export async function removeAccessCode(userId: string): Promise<ActionResult> {
     const outcome = removeAccessCodeRecord(store, actor, userId);
     if (!outcome.ok) return { store, result: { ok: false, error: outcome.error } };
     return { store: outcome.value, result: { ok: true, message: "Access code removed." } };
+  });
+  if (result.ok) refresh();
+  return result;
+}
+
+export async function savePersonSettings(_previous: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const { user } = await loadContext();
+  const userId = String(formData.get("userId") ?? "");
+  const input = {
+    approvalMode: String(formData.get("approvalMode") ?? ""),
+    canReturn: formData.get("canReturn") === "yes",
+    groupAdmin: formData.get("groupAdmin") === "yes",
+  };
+  const result = await getRepository().update<ActionResult>((store) => {
+    const actor = store.users.find((entry) => entry.id === user.id);
+    if (!actor) return { store, result: { ok: false, error: "Your session expired. Sign in again." } };
+    const outcome = updateUserPermissions(store, actor, userId, input);
+    if (!outcome.ok) return { store, result: { ok: false, error: outcome.error } };
+    return { store: outcome.value, result: { ok: true, message: "Settings saved." } };
   });
   if (result.ok) refresh();
   return result;

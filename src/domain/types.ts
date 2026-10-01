@@ -23,6 +23,14 @@ export type User = {
   displayName: string;
   role: Role;
   groupId: string;
+  /** This person's requests check out immediately, or wait for approval. */
+  approvalMode: ApprovalMode;
+  /** This person may record returns for their own loans and admin checkouts for their group. */
+  canReturn: boolean;
+  /** This person can manage people, codes, and pending requests in their own group. */
+  groupAdmin: boolean;
+  /** The original administrator. Other administrators cannot view or change this code, or change their own. */
+  primaryAdmin?: boolean;
 };
 
 export type Credential = {
@@ -35,11 +43,8 @@ export type Credential = {
 export type Group = {
   id: string;
   name: string;
-  approvalMode: ApprovalMode;
   /** Codes in this group sign in as administrators. Cannot be turned off. */
   grantsAdmin: boolean;
-  /** Members may record returns for their own loans and admin checkouts for this group. */
-  membersCanReturn: boolean;
 };
 
 export type Item = {

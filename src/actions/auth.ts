@@ -12,16 +12,21 @@ export async function login(_previous: ActionResult | null, formData: FormData):
 
   const store = await getRepository().read();
   let matched: (typeof store.users)[number] | null = null;
+  let codeHash = "";
   for (const credential of store.credentials) {
     if (await verifyAccessCode(code, credential.codeHash)) {
-      matched = store.users.find((user) => user.id === credential.userId) ?? matched;
+      const user = store.users.find((entry) => entry.id === credential.userId);
+      if (user) {
+        matched = user;
+        codeHash = credential.codeHash;
+      }
     }
   }
-  if (!matched) return { ok: false, error: "That access code is not recognized." };
+  if (!matched || !codeHash) return { ok: false, error: "That access code is not recognized." };
 
   const group = store.groups.find((entry) => entry.id === matched.groupId);
   const role = group?.grantsAdmin ? "admin" : "member";
-  await setSession(matched.id, role);
+  await setSession(matched.id, role, codeHash);
   redirect(role === "admin" ? "/admin" : "/dashboard");
 }
 

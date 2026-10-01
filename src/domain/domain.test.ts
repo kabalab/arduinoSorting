@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { suggestItems } from "./names";
 import { displayStatus, isOverdue, overdueLabel } from "./overdue";
-import { canRequestItem, memberCanSeeCheckout } from "./permissions";
-import { ensureAccessModel, removeAccessCode } from "./records";
+import { canRequestItem, manageCodeError, memberCanSeeCheckout } from "./permissions";
+import { addAccessCode, ensureAccessModel, removeAccessCode, renameAccessCode, replaceAccessCode, updateUserPermissions } from "./records";
 import { adminCheckout, approveRequest, returnItems, submitRequest } from "./requests";
 import { adjustAvailable, createItem, removeItem } from "./stock";
 import { itemTotal, type Group, type StoreData, type User } from "./types";
@@ -13,14 +13,14 @@ const now = new Date(2026, 8, 30, 12, 0, 0);
 function store(): StoreData {
   return {
     users: [
-      { id: "admin", displayName: "Ada", role: "admin", groupId: "arduino" },
-      { id: "alex", displayName: "Alex", role: "member", groupId: "arduino" },
-      { id: "jordan", displayName: "Jordan", role: "member", groupId: "robotics" },
+      { id: "admin", displayName: "Ada", role: "admin", groupId: "arduino", approvalMode: "required", canReturn: false, groupAdmin: false },
+      { id: "alex", displayName: "Alex", role: "member", groupId: "arduino", approvalMode: "automatic", canReturn: false, groupAdmin: false },
+      { id: "jordan", displayName: "Jordan", role: "member", groupId: "robotics", approvalMode: "required", canReturn: false, groupAdmin: false },
     ],
     credentials: [],
     groups: [
-      { id: "arduino", name: "Arduino", approvalMode: "automatic", grantsAdmin: false, membersCanReturn: false },
-      { id: "robotics", name: "Robotics", approvalMode: "required", grantsAdmin: false, membersCanReturn: false },
+      { id: "arduino", name: "Arduino", grantsAdmin: false },
+      { id: "robotics", name: "Robotics", grantsAdmin: false },
     ],
     items: [
       {
@@ -80,9 +80,9 @@ function store(): StoreData {
   };
 }
 
-const admin: User = { id: "admin", displayName: "Ada", role: "admin", groupId: "arduino" };
-const alex: User = { id: "alex", displayName: "Alex", role: "member", groupId: "arduino" };
-const jordan: User = { id: "jordan", displayName: "Jordan", role: "member", groupId: "robotics" };
+const admin: User = { id: "admin", displayName: "Ada", role: "admin", groupId: "arduino", approvalMode: "required", canReturn: false, groupAdmin: false };
+const alex: User = { id: "alex", displayName: "Alex", role: "member", groupId: "arduino", approvalMode: "automatic", canReturn: false, groupAdmin: false };
+const jordan: User = { id: "jordan", displayName: "Jordan", role: "member", groupId: "robotics", approvalMode: "required", canReturn: false, groupAdmin: false };
 
 describe("names", () => {
   it("matches case-insensitive substrings", () => {
@@ -143,7 +143,7 @@ describe("stock", () => {
 });
 
 describe("requests", () => {
-  it("checks out immediately for an automatic group", () => {
+  it("checks out immediately when that person is set to automatic", () => {
     const result = submitRequest(
       store(),
       alex,
@@ -161,7 +161,7 @@ describe("requests", () => {
     assert.equal(displayStatus(request, now), "checked_out");
   });
 
-  it("leaves a required group pending until approval, then checks out", () => {
+  it("leaves a person who requires approval pending until approval, then checks out", () => {
     const pending = submitRequest(
       store(),
       jordan,
@@ -240,7 +240,7 @@ describe("requests", () => {
 describe("access model", () => {
   it("creates Administrators and moves existing administrators into it", () => {
     const legacy = store();
-    legacy.groups = [{ id: "arduino", name: "Arduino", approvalMode: "automatic" } as Group];
+    legacy.groups = [{ id: "arduino", name: "Arduino" } as Group];
     legacy.users[0].groupId = "arduino";
     legacy.users[0].role = "admin";
 
@@ -252,6 +252,8 @@ describe("access model", () => {
     assert.equal(first.store.users.find((user) => user.id === "admin")?.groupId, admins.id);
     assert.equal(first.store.users.find((user) => user.id === "admin")?.role, "admin");
     assert.equal(first.store.users.find((user) => user.id === "alex")?.role, "member");
+    assert.equal(first.store.users.find((user) => user.id === "admin")?.primaryAdmin, true);
+    assert.equal(first.store.users.find((user) => user.id === "alex")?.primaryAdmin, false);
 
     const second = ensureAccessModel(first.store);
     assert.equal(second.changed, false);
@@ -263,9 +265,7 @@ describe("access model", () => {
     data.groups.unshift({
       id: "admins",
       name: "Administrators",
-      approvalMode: "required",
       grantsAdmin: true,
-      membersCanReturn: false,
     });
     data.users[0].groupId = "admins";
     data.credentials.push({ userId: "admin", codeHash: "hash", code: "CODE1234" });
@@ -275,7 +275,15 @@ describe("access model", () => {
     assert.equal(blocked.ok, false);
     if (!blocked.ok) assert.match(blocked.error, /cannot be removed/i);
 
-    data.users.push({ id: "sam", displayName: "Sam", role: "admin", groupId: "admins" });
+    data.users.push({
+      id: "sam",
+      displayName: "Sam",
+      role: "admin",
+      groupId: "admins",
+      approvalMode: "required",
+      canReturn: false,
+      groupAdmin: false,
+    });
     data.credentials.push({ userId: "sam", codeHash: "hash-3", code: "CODE9999" });
     const removed = removeAccessCode(data, admin, "sam");
     assert.equal(removed.ok, true);
@@ -312,7 +320,7 @@ describe("admin checkout and member returns", () => {
     if (!short.ok) assert.match(short.error, /available/i);
   });
 
-  it("lets a member return their own loan and an admin checkout only when the group allows it", () => {
+  it("lets a person return their own loan only when they can mark items returned", () => {
     const submitted = submitRequest(
       store(),
       alex,
@@ -326,17 +334,26 @@ describe("admin checkout and member returns", () => {
     assert.equal(blocked.ok, false);
 
     const allowedStore = submitted.value;
-    allowedStore.groups[0].membersCanReturn = true;
-    const other: User = { id: "sam", displayName: "Sam", role: "member", groupId: "arduino" };
+    const stillBlocked = returnItems(allowedStore, alex, requestId, [{ itemId: "uno", quantity: 1 }], now);
+    assert.equal(stillBlocked.ok, false);
+    const other: User = {
+      id: "sam",
+      displayName: "Sam",
+      role: "member",
+      groupId: "arduino",
+      approvalMode: "automatic",
+      canReturn: true,
+      groupAdmin: false,
+    };
     allowedStore.users.push(other);
     const otherReturn = returnItems(allowedStore, other, requestId, [{ itemId: "uno", quantity: 1 }], now);
     assert.equal(otherReturn.ok, false);
 
-    const ownReturn = returnItems(allowedStore, alex, requestId, [{ itemId: "uno", quantity: 1 }], now);
+    const ownReturn = returnItems(allowedStore, { ...alex, canReturn: true }, requestId, [{ itemId: "uno", quantity: 1 }], now);
     assert.equal(ownReturn.ok, true);
   });
 
-  it("shows an admin checkout to that group and lets members return it when allowed", () => {
+  it("shows an admin checkout to that group and lets a person return it when they can mark items returned", () => {
     const data = store();
     const issued = adminCheckout(
       data,
@@ -353,11 +370,189 @@ describe("admin checkout and member returns", () => {
     const blocked = returnItems(issued.value, alex, request.id, [{ itemId: "uno", quantity: 1 }], now);
     assert.equal(blocked.ok, false);
 
-    issued.value.groups[0].membersCanReturn = true;
-    const returned = returnItems(issued.value, alex, request.id, [{ itemId: "uno", quantity: 1 }], now);
+    const returned = returnItems(issued.value, { ...alex, canReturn: true }, request.id, [{ itemId: "uno", quantity: 1 }], now);
     assert.equal(returned.ok, true);
     if (!returned.ok) return;
     assert.equal(returned.value.requests[0].status, "returned");
+  });
+});
+
+describe("per-user permissions", () => {
+  it("fills in missing person settings with approval required", () => {
+    const data = store();
+    const person = data.users.find((user) => user.id === "alex");
+    assert.ok(person);
+    delete (person as Partial<User>).approvalMode;
+    delete (person as Partial<User>).canReturn;
+    delete (person as Partial<User>).groupAdmin;
+
+    const first = ensureAccessModel(data);
+    assert.equal(first.changed, true);
+    const copied = first.store.users.find((user) => user.id === "alex");
+    assert.equal(copied?.approvalMode, "required");
+    assert.equal(copied?.canReturn, false);
+    assert.equal(copied?.groupAdmin, false);
+    assert.equal(ensureAccessModel(first.store).changed, false);
+  });
+
+  it("uses the person's approval mode when it differs from the group", () => {
+    const pending = submitRequest(
+      store(),
+      { ...alex, approvalMode: "required" },
+      { lines: [{ itemId: "uno", quantity: 1 }], expectedReturn: "2026-10-02" },
+      now,
+    );
+    assert.equal(pending.ok, true);
+    if (!pending.ok) return;
+    assert.equal(pending.value.requests[0].status, "pending");
+  });
+
+  it("lets a group admin approve only their own group's pending requests", () => {
+    const pending = submitRequest(
+      store(),
+      jordan,
+      { lines: [{ itemId: "mega", quantity: 1 }], expectedReturn: "2026-10-06" },
+      now,
+    );
+    assert.equal(pending.ok, true);
+    if (!pending.ok) return;
+    const requestId = pending.value.requests[0].id;
+
+    const outsider = approveRequest(pending.value, { ...alex, groupAdmin: true }, requestId, now);
+    assert.equal(outsider.ok, false);
+
+    const approved = approveRequest(pending.value, { ...jordan, groupAdmin: true }, requestId, now);
+    assert.equal(approved.ok, true);
+    if (!approved.ok) return;
+    assert.equal(approved.value.requests[0].status, "checked_out");
+  });
+
+  it("stops a group admin from giving permissions they do not have", () => {
+    const data = store();
+    data.credentials.push({ userId: "alex", codeHash: "hash-alex" });
+    data.credentials.push({ userId: "jordan", codeHash: "hash-jordan" });
+    data.users.push({
+      id: "sam",
+      displayName: "Sam",
+      role: "member",
+      groupId: "arduino",
+      approvalMode: "required",
+      canReturn: false,
+      groupAdmin: false,
+    });
+    data.credentials.push({ userId: "sam", codeHash: "hash-sam" });
+    const lead: User = { ...alex, groupAdmin: true, approvalMode: "required", canReturn: false };
+
+    const raised = updateUserPermissions(data, lead, "sam", {
+      approvalMode: "automatic",
+      canReturn: true,
+      groupAdmin: false,
+    });
+    assert.equal(raised.ok, false);
+    if (!raised.ok) assert.match(raised.error, /permissions you have/i);
+
+    const kept = updateUserPermissions(
+      {
+        ...data,
+        users: data.users.map((user) => (user.id === "sam" ? { ...user, approvalMode: "automatic" } : user)),
+      },
+      lead,
+      "sam",
+      { approvalMode: "automatic", canReturn: false, groupAdmin: false },
+    );
+    assert.equal(kept.ok, true);
+    if (!kept.ok) return;
+    assert.equal(kept.value.users.find((user) => user.id === "sam")?.approvalMode, "automatic");
+
+    const granted = updateUserPermissions(data, { ...lead, approvalMode: "automatic", canReturn: true }, "sam", {
+      approvalMode: "automatic",
+      canReturn: true,
+      groupAdmin: true,
+    });
+    assert.equal(granted.ok, true);
+    if (!granted.ok) return;
+    const sam = granted.value.users.find((user) => user.id === "sam");
+    assert.equal(sam?.approvalMode, "automatic");
+    assert.equal(sam?.canReturn, true);
+    assert.equal(sam?.groupAdmin, true);
+
+    const self = updateUserPermissions(data, { ...lead, approvalMode: "automatic", canReturn: true }, "alex", {
+      approvalMode: "automatic",
+      canReturn: true,
+      groupAdmin: true,
+    });
+    assert.equal(self.ok, false);
+
+    const otherGroup = updateUserPermissions(data, { ...lead, approvalMode: "automatic", canReturn: true }, "jordan", {
+      approvalMode: "required",
+      canReturn: false,
+      groupAdmin: false,
+    });
+    assert.equal(otherGroup.ok, false);
+
+    const byAdmin = updateUserPermissions(data, admin, "sam", {
+      approvalMode: "automatic",
+      canReturn: true,
+      groupAdmin: true,
+    });
+    assert.equal(byAdmin.ok, true);
+  });
+});
+
+describe("code management", () => {
+  it("lets a group admin add people and change codes in their group, including their own", () => {
+    const data = store();
+    data.credentials.push({ userId: "alex", codeHash: "hash-alex", code: "ALEXCODE" });
+    data.credentials.push({ userId: "jordan", codeHash: "hash-jordan", code: "JORDAN" });
+    const lead: User = { ...alex, groupAdmin: true };
+
+    const renamed = renameAccessCode(data, lead, "alex", "Alexis");
+    assert.equal(renamed.ok, true);
+    const rotated = replaceAccessCode(data, lead, "alex", "NEWCODE", "hash-new");
+    assert.equal(rotated.ok, true);
+    const added = addAccessCode(data, lead, "arduino", "Sam", "SAMCODE", "hash-sam");
+    assert.equal(added.ok, true);
+
+    const otherGroup = renameAccessCode(data, lead, "jordan", "Nope");
+    assert.equal(otherGroup.ok, false);
+    const removed = removeAccessCode(data, lead, "alex");
+    assert.equal(removed.ok, false);
+    const elsewhere = addAccessCode(data, lead, "robotics", "Sam", "NOPE", "hash-nope");
+    assert.equal(elsewhere.ok, false);
+  });
+
+  it("stops a later administrator from viewing or changing the original administrator code or their own code", () => {
+    const data = store();
+    data.groups.unshift({ id: "admins", name: "Administrators", grantsAdmin: true });
+    data.users[0].groupId = "admins";
+    data.users[0].role = "admin";
+    data.users[0].primaryAdmin = true;
+    const extra: User = {
+      id: "extra",
+      displayName: "Extra",
+      role: "admin",
+      groupId: "admins",
+      approvalMode: "required",
+      canReturn: false,
+      groupAdmin: false,
+      primaryAdmin: false,
+    };
+    data.users.push(extra);
+    data.credentials.push({ userId: "admin", codeHash: "hash-admin", code: "ORIG" });
+    data.credentials.push({ userId: "extra", codeHash: "hash-extra", code: "EXTRA" });
+    data.credentials.push({ userId: "jordan", codeHash: "hash-jordan", code: "JORDAN" });
+    const original = data.users[0];
+
+    assert.match(manageCodeError(data, extra, "admin", "reveal") ?? "", /original administrator/i);
+    assert.match(manageCodeError(data, extra, "admin", "rotate") ?? "", /original administrator/i);
+    assert.match(manageCodeError(data, extra, "extra", "rotate") ?? "", /own access code/i);
+    assert.equal(manageCodeError(data, extra, "extra", "reveal"), null);
+    assert.equal(manageCodeError(data, extra, "admin", "rename"), null);
+    assert.equal(manageCodeError(data, extra, "jordan", "rotate"), null);
+    assert.equal(manageCodeError(data, extra, "jordan", "remove"), null);
+    assert.equal(manageCodeError(data, original, "extra", "rotate"), null);
+    assert.equal(manageCodeError(data, original, "admin", "reveal"), null);
+    assert.equal(removeAccessCode(data, extra, "admin").ok, false);
   });
 });
 

@@ -8,8 +8,18 @@ export async function loadContext(): Promise<{ user: User; store: StoreData }> {
   if (!session) redirect("/");
   const store = await getRepository().read();
   const user = store.users.find((entry) => entry.id === session.userId);
-  if (!user) redirect("/");
+  const credential = store.credentials.find((entry) => entry.userId === session.userId);
+  if (!user || !credential || credential.codeHash !== session.codeHash) {
+    redirect("/session/end");
+  }
   return { user, store };
+}
+
+export async function requireGroupAdmin(): Promise<{ user: User; store: StoreData }> {
+  const context = await loadContext();
+  if (context.user.role === "admin") redirect("/admin/groups");
+  if (!context.user.groupAdmin) redirect("/dashboard");
+  return context;
 }
 
 export async function requireAdmin(): Promise<{ user: User; store: StoreData }> {

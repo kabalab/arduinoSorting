@@ -1,12 +1,10 @@
-import { fail, type Group, type Result, type Role, type Settings, type StoreData, type User } from "./types";
-import { permissionError } from "./permissions";
+import { fail, type ApprovalMode, type Group, type Result, type Role, type Settings, type StoreData, type User } from "./types";
+import { addCodeError, grantCeilingError, isAdmin, manageCodeError, permissionError } from "./permissions";
 
 const APPROVAL_MODES = new Set(["automatic", "required"]);
 
 export type GroupDraft = {
   name: string;
-  approvalMode: string;
-  membersCanReturn: boolean;
 };
 
 function roleForGroup(group: Group | undefined): Role {
@@ -17,15 +15,10 @@ function groupNameTaken(store: StoreData, name: string, exceptId?: string): bool
   return store.groups.some((group) => group.id !== exceptId && group.name.toLowerCase() === name.toLowerCase());
 }
 
-function readGroupDraft(input: GroupDraft): { name: string; approvalMode: Group["approvalMode"]; membersCanReturn: boolean } | string {
+function readGroupDraft(input: GroupDraft): { name: string } | string {
   const name = input.name.trim();
   if (!name) return "Enter a group name.";
-  if (!APPROVAL_MODES.has(input.approvalMode)) return "Choose an approval mode.";
-  return {
-    name,
-    approvalMode: input.approvalMode as Group["approvalMode"],
-    membersCanReturn: input.membersCanReturn,
-  };
+  return { name };
 }
 
 /**
@@ -38,12 +31,17 @@ export function ensureAccessModel(store: StoreData): { store: StoreData; changed
   let changed = false;
 
   for (const group of next.groups) {
-    if (typeof group.grantsAdmin !== "boolean") {
-      group.grantsAdmin = false;
+    const legacy = group as Group & { approvalMode?: unknown; membersCanReturn?: unknown };
+    if ("approvalMode" in legacy) {
+      delete legacy.approvalMode;
       changed = true;
     }
-    if (typeof group.membersCanReturn !== "boolean") {
-      group.membersCanReturn = false;
+    if ("membersCanReturn" in legacy) {
+      delete legacy.membersCanReturn;
+      changed = true;
+    }
+    if (typeof group.grantsAdmin !== "boolean") {
+      group.grantsAdmin = false;
       changed = true;
     }
   }
@@ -53,9 +51,7 @@ export function ensureAccessModel(store: StoreData): { store: StoreData; changed
     adminGroup = {
       id: crypto.randomUUID(),
       name: "Administrators",
-      approvalMode: "required",
       grantsAdmin: true,
-      membersCanReturn: false,
     };
     next.groups.unshift(adminGroup);
     changed = true;
@@ -74,6 +70,34 @@ export function ensureAccessModel(store: StoreData): { store: StoreData; changed
       user.role = role;
       changed = true;
     }
+    if (user.approvalMode !== "automatic" && user.approvalMode !== "required") {
+      user.approvalMode = "required";
+      changed = true;
+    }
+    if (typeof user.canReturn !== "boolean") {
+      user.canReturn = false;
+      changed = true;
+    }
+    if (typeof user.groupAdmin !== "boolean") {
+      user.groupAdmin = false;
+      changed = true;
+    }
+  }
+
+  let primary = next.users.find((user) => user.primaryAdmin && user.role === "admin");
+  if (!primary) {
+    primary = next.users.find((user) => user.role === "admin");
+    if (primary && !primary.primaryAdmin) {
+      primary.primaryAdmin = true;
+      changed = true;
+    }
+  }
+  for (const user of next.users) {
+    const should = user.id === primary?.id;
+    if (user.primaryAdmin !== should) {
+      user.primaryAdmin = should;
+      changed = true;
+    }
   }
 
   if (!changed) return { store, changed: false };
@@ -90,9 +114,7 @@ export function createGroup(store: StoreData, actor: User, input: GroupDraft): R
   next.groups.push({
     id: crypto.randomUUID(),
     name: draft.name,
-    approvalMode: draft.approvalMode,
     grantsAdmin: false,
-    membersCanReturn: draft.membersCanReturn,
   });
   return { ok: true, value: next };
 }
@@ -109,8 +131,6 @@ export function updateGroup(store: StoreData, actor: User, groupId: string, inpu
   const group = next.groups.find((entry) => entry.id === groupId);
   if (!group) return fail("That group was not found.");
   group.name = draft.name;
-  group.approvalMode = draft.approvalMode;
-  group.membersCanReturn = draft.membersCanReturn;
   return { ok: true, value: next };
 }
 
@@ -122,7 +142,7 @@ export function addAccessCode(
   code: string,
   codeHash: string,
 ): Result<{ store: StoreData; user: User }> {
-  const denied = permissionError(actor);
+  const denied = addCodeError(store, actor, groupId);
   if (denied) return fail(denied);
   const name = displayName.trim();
   if (!name) return fail("Enter a name.");
@@ -133,6 +153,10 @@ export function addAccessCode(
     displayName: name,
     role: roleForGroup(group),
     groupId,
+    approvalMode: "required",
+    canReturn: false,
+    groupAdmin: false,
+    primaryAdmin: false,
   };
   const next = structuredClone(store);
   next.users.push(user);
@@ -141,7 +165,7 @@ export function addAccessCode(
 }
 
 export function renameAccessCode(store: StoreData, actor: User, userId: string, displayName: string): Result<StoreData> {
-  const denied = permissionError(actor);
+  const denied = manageCodeError(store, actor, userId, "rename");
   if (denied) return fail(denied);
   const name = displayName.trim();
   if (!name) return fail("Enter a name.");
@@ -161,12 +185,8 @@ export function replaceAccessCode(
   code: string,
   codeHash: string,
 ): Result<StoreData> {
-  const denied = permissionError(actor);
+  const denied = manageCodeError(store, actor, userId, "rotate");
   if (denied) return fail(denied);
-  if (!store.users.some((user) => user.id === userId)) return fail("That person was not found.");
-  if (!store.credentials.some((credential) => credential.userId === userId)) {
-    return fail("That access code was not found.");
-  }
   const next = structuredClone(store);
   const credential = next.credentials.find((entry) => entry.userId === userId);
   if (!credential) return fail("That access code was not found.");
@@ -176,7 +196,7 @@ export function replaceAccessCode(
 }
 
 export function removeAccessCode(store: StoreData, actor: User, userId: string): Result<StoreData> {
-  const denied = permissionError(actor);
+  const denied = manageCodeError(store, actor, userId, "remove");
   if (denied) return fail(denied);
   const person = store.users.find((user) => user.id === userId);
   if (!person) return fail("That person was not found.");
@@ -195,6 +215,50 @@ export function removeAccessCode(store: StoreData, actor: User, userId: string):
   }
   const next = structuredClone(store);
   next.credentials = next.credentials.filter((entry) => entry.userId !== userId);
+  return { ok: true, value: next };
+}
+
+export type PersonPermissionDraft = {
+  approvalMode: string;
+  canReturn: boolean;
+  groupAdmin: boolean;
+};
+
+export function updateUserPermissions(
+  store: StoreData,
+  actor: User,
+  userId: string,
+  input: PersonPermissionDraft,
+): Result<StoreData> {
+  if (!isAdmin(actor) && !actor.groupAdmin) return fail("You do not have permission to do that.");
+  if (!isAdmin(actor) && actor.id === userId) return fail("You cannot change your own settings.");
+  const target = store.users.find((user) => user.id === userId);
+  if (!target) return fail("That person was not found.");
+  if (!store.credentials.some((credential) => credential.userId === userId)) {
+    return fail("That access code was not found.");
+  }
+  if (!isAdmin(actor) && target.groupId !== actor.groupId) {
+    return fail("You can only change people in your group.");
+  }
+  const group = store.groups.find((entry) => entry.id === target.groupId);
+  if (!group) return fail("That group was not found.");
+  if (!isAdmin(actor) && group.grantsAdmin) return fail("You cannot change the Administrators group.");
+  if (!APPROVAL_MODES.has(input.approvalMode)) return fail("Choose an approval mode.");
+
+  const draft = {
+    approvalMode: input.approvalMode as ApprovalMode,
+    canReturn: input.canReturn,
+    groupAdmin: group.grantsAdmin ? false : input.groupAdmin,
+  };
+  const ceiling = grantCeilingError(actor, target, draft);
+  if (ceiling) return fail(ceiling);
+
+  const next = structuredClone(store);
+  const person = next.users.find((user) => user.id === userId);
+  if (!person) return fail("That person was not found.");
+  person.approvalMode = draft.approvalMode;
+  person.canReturn = draft.canReturn;
+  person.groupAdmin = draft.groupAdmin;
   return { ok: true, value: next };
 }
 

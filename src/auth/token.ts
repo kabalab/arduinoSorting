@@ -6,6 +6,8 @@ const SESSION_DAYS = 14;
 export type SessionToken = {
   userId: string;
   role: Role;
+  /** Hash of the access code that opened this session. A rotated or removed code no longer matches. */
+  codeHash: string;
   exp: number;
 };
 
@@ -52,10 +54,16 @@ export function sessionSecret(): string {
   return secret;
 }
 
-export async function createSessionToken(userId: string, role: Role, secret = sessionSecret()): Promise<string> {
+export async function createSessionToken(
+  userId: string,
+  role: Role,
+  codeHash: string,
+  secret = sessionSecret(),
+): Promise<string> {
   const payload: SessionToken = {
     userId,
     role,
+    codeHash,
     exp: Math.floor(Date.now() / 1000) + SESSION_DAYS * 24 * 60 * 60,
   };
   const body = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
@@ -72,7 +80,7 @@ export async function readSessionToken(token: string | undefined, secret?: strin
   if (!safeEqual(signature, expected)) return null;
   try {
     const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(body))) as SessionToken;
-    if (!payload.userId || (payload.role !== "admin" && payload.role !== "member")) return null;
+    if (!payload.userId || !payload.codeHash || (payload.role !== "admin" && payload.role !== "member")) return null;
     if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {
