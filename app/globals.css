@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b1017;
+  --card: #151c27;
+  --card-muted: #1c2633;
+  --stroke: #2a3648;
+  --text: #e7edf5;
+  --muted: #93a0b4;
+  --accent: #3b82f6;
+  --danger: #f07178;
+  --warning: #e6b450;
+  --success: #7dcea0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-card-muted: var(--card-muted);
+  --color-stroke: var(--stroke);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-sans), sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+dialog {
+  margin: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+dialog::backdrop {
+  background: rgb(5 8 12 / 0.72);
+}
