@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { ensureAccessModel } from "@/src/domain/records";
 import type { StoreData } from "@/src/domain/types";
 import type { Repository } from "@/src/data/repository";
 import { createSeed, STORE_PATH } from "./seed";
@@ -18,7 +19,10 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 async function loadOrSeed(): Promise<StoreData> {
   try {
     const raw = await readFile(STORE_PATH, "utf8");
-    return JSON.parse(raw) as StoreData;
+    const parsed = JSON.parse(raw) as StoreData;
+    const normalized = ensureAccessModel(parsed);
+    if (normalized.changed) await persist(normalized.store);
+    return normalized.store;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") throw error;

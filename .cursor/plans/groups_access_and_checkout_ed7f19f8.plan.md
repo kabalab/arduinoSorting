@@ -4,16 +4,16 @@ overview: "Add a header log out button and solid dialog backgrounds, then move a
 todos:
   - id: logout-dialogs
     content: Header log out button and solid dialog background
-    status: pending
+    status: completed
   - id: group-codes
     content: Move codes onto groups, multiple codes, see current and rotate, Administrators group
-    status: pending
+    status: completed
   - id: admin-checkout
     content: Admin checkout for any group that skips approval
-    status: pending
+    status: completed
   - id: member-return
     content: Group setting that lets members mark items returned
-    status: pending
+    status: completed
 isProject: false
 ---
 

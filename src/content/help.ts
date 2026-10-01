@@ -69,6 +69,13 @@ const member: HelpSection[] = [
       "If your group requires approval, the request stays Pending until an administrator approves it. Approval checks the items out immediately. There is no separate step to mark them as taken.",
     ],
   },
+  {
+    heading: "Checked out and returns",
+    paragraphs: [
+      "Checked out shows supplies you still have, and any items an administrator checked out for your group.",
+      "If your group allows members to mark items returned, you can record a return for your own loans and for those group checkouts. Otherwise an administrator records the return.",
+    ],
+  },
 ];
 
 const admin: HelpSection[] = [
@@ -97,15 +104,23 @@ const admin: HelpSection[] = [
   {
     heading: "Full and partial returns",
     paragraphs: [
-      "Checked out lists open loans, including how many days overdue. Mark Returned records the quantities that actually came back.",
+      "Checked out lists open loans, including how many days overdue. Mark Returned records the quantities that actually came back. You can always mark any ticket returned. If a group allows it, members of that group can mark returns for their own loans and for checkouts an administrator made for them.",
       "A partial return increases stock only by that amount and leaves the request Checked Out. When every line is fully returned, the request becomes Returned.",
     ],
   },
   {
     heading: "Groups and access codes",
     paragraphs: [
-      "Groups have a name and an approval mode. Automatic means requests check out on submit when stock allows. Required means they wait for approval.",
-      "Users / Access is where you add a person, assign a group and role, and set or rotate an access code. The code is shown once. After that only a hash is stored.",
+      "Groups have a name and an approval mode. Automatic means requests check out on submit when stock allows. Required means they wait for approval. Each group also has a checkbox for whether members can mark items returned.",
+      "Access codes live on the group. Each code has a name so history can say who checked something out. See current shows the code that is saved now. Rotate replaces it and shows the new one. A code created before this was saved only as a hash; rotate it once to make it viewable.",
+      "The Administrators group signs every code in as an administrator. That setting cannot be turned off, and the last code in that group cannot be removed.",
+    ],
+  },
+  {
+    heading: "Check out for a group",
+    paragraphs: [
+      "On Checked out, choose any group, the quantities, and an expected return date. That checks the items out immediately, even when the group normally needs approval, and even when the item is hidden from that group. The supplies still have to be available.",
+      "The ticket is filed under the group you chose and recorded as created by you. Members of that group see it with their own loans.",
     ],
   },
   {

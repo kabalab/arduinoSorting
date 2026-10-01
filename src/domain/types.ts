@@ -28,12 +28,18 @@ export type User = {
 export type Credential = {
   userId: string;
   codeHash: string;
+  /** Stored so an administrator can view it. Absent when only a hash was saved. */
+  code?: string;
 };
 
 export type Group = {
   id: string;
   name: string;
   approvalMode: ApprovalMode;
+  /** Codes in this group sign in as administrators. Cannot be turned off. */
+  grantsAdmin: boolean;
+  /** Members may record returns for their own loans and admin checkouts for this group. */
+  membersCanReturn: boolean;
 };
 
 export type Item = {

@@ -26,18 +26,19 @@ export async function createSeed(): Promise<StoreData> {
   const store: StoreData = {
     settings: { siteName: "Equipment storage" },
     groups: [
-      { id: "group-arduino", name: "Arduino", approvalMode: "automatic" },
-      { id: "group-robotics", name: "Robotics", approvalMode: "required" },
+      { id: "group-administrators", name: "Administrators", approvalMode: "required", grantsAdmin: true, membersCanReturn: false },
+      { id: "group-arduino", name: "Arduino", approvalMode: "automatic", grantsAdmin: false, membersCanReturn: false },
+      { id: "group-robotics", name: "Robotics", approvalMode: "required", grantsAdmin: false, membersCanReturn: false },
     ],
     users: [
-      { id: "user-admin", displayName: "Ada Okonkwo", role: "admin", groupId: "group-arduino" },
+      { id: "user-admin", displayName: "Ada Okonkwo", role: "admin", groupId: "group-administrators" },
       { id: "user-arduino", displayName: "Alex Chen", role: "member", groupId: "group-arduino" },
       { id: "user-robotics", displayName: "Jordan Lee", role: "member", groupId: "group-robotics" },
     ],
     credentials: [
-      { userId: "user-admin", codeHash: adminHash },
-      { userId: "user-arduino", codeHash: arduinoHash },
-      { userId: "user-robotics", codeHash: roboticsHash },
+      { userId: "user-admin", codeHash: adminHash, code: adminCode },
+      { userId: "user-arduino", codeHash: arduinoHash, code: arduinoCode },
+      { userId: "user-robotics", codeHash: roboticsHash, code: roboticsCode },
     ],
     items: [
       {
@@ -134,7 +135,7 @@ export async function createSeed(): Promise<StoreData> {
   };
 
   const lines = [
-    "These access codes were created once. Only their hashes are stored in the app.",
+    "These access codes were created once. Administrators can view them again from each group.",
     "",
     `Admin — Ada Okonkwo — ${adminCode}`,
     `Arduino — Alex Chen — ${arduinoCode}`,

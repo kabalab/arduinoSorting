@@ -2,103 +2,199 @@ import { fail, type Group, type Result, type Role, type Settings, type StoreData
 import { permissionError } from "./permissions";
 
 const APPROVAL_MODES = new Set(["automatic", "required"]);
-const ROLES = new Set<Role>(["admin", "member"]);
 
-export function createGroup(
-  store: StoreData,
-  actor: User,
-  input: { name: string; approvalMode: string },
-): Result<StoreData> {
+export type GroupDraft = {
+  name: string;
+  approvalMode: string;
+  membersCanReturn: boolean;
+};
+
+function roleForGroup(group: Group | undefined): Role {
+  return group?.grantsAdmin ? "admin" : "member";
+}
+
+function groupNameTaken(store: StoreData, name: string, exceptId?: string): boolean {
+  return store.groups.some((group) => group.id !== exceptId && group.name.toLowerCase() === name.toLowerCase());
+}
+
+function readGroupDraft(input: GroupDraft): { name: string; approvalMode: Group["approvalMode"]; membersCanReturn: boolean } | string {
+  const name = input.name.trim();
+  if (!name) return "Enter a group name.";
+  if (!APPROVAL_MODES.has(input.approvalMode)) return "Choose an approval mode.";
+  return {
+    name,
+    approvalMode: input.approvalMode as Group["approvalMode"],
+    membersCanReturn: input.membersCanReturn,
+  };
+}
+
+/**
+ * Older stores have no Administrators group and keep only code hashes.
+ * Create that group when it is missing, move existing administrators into it,
+ * and fill in the new group fields. Codes that are only hashes stay that way.
+ */
+export function ensureAccessModel(store: StoreData): { store: StoreData; changed: boolean } {
+  const next = structuredClone(store);
+  let changed = false;
+
+  for (const group of next.groups) {
+    if (typeof group.grantsAdmin !== "boolean") {
+      group.grantsAdmin = false;
+      changed = true;
+    }
+    if (typeof group.membersCanReturn !== "boolean") {
+      group.membersCanReturn = false;
+      changed = true;
+    }
+  }
+
+  let adminGroup = next.groups.find((group) => group.grantsAdmin);
+  if (!adminGroup) {
+    adminGroup = {
+      id: crypto.randomUUID(),
+      name: "Administrators",
+      approvalMode: "required",
+      grantsAdmin: true,
+      membersCanReturn: false,
+    };
+    next.groups.unshift(adminGroup);
+    changed = true;
+  }
+
+  for (const user of next.users) {
+    if (user.role === "admin" && user.groupId !== adminGroup.id) {
+      user.groupId = adminGroup.id;
+      changed = true;
+    }
+  }
+
+  for (const user of next.users) {
+    const role = roleForGroup(next.groups.find((group) => group.id === user.groupId));
+    if (user.role !== role) {
+      user.role = role;
+      changed = true;
+    }
+  }
+
+  if (!changed) return { store, changed: false };
+  return { store: next, changed: true };
+}
+
+export function createGroup(store: StoreData, actor: User, input: GroupDraft): Result<StoreData> {
   const denied = permissionError(actor);
   if (denied) return fail(denied);
-  const name = input.name.trim();
-  if (!name) return fail("Enter a group name.");
-  if (!APPROVAL_MODES.has(input.approvalMode)) return fail("Choose an approval mode.");
-  if (store.groups.some((group) => group.name.toLowerCase() === name.toLowerCase())) {
-    return fail("A group with that name already exists.");
-  }
+  const draft = readGroupDraft(input);
+  if (typeof draft === "string") return fail(draft);
+  if (groupNameTaken(store, draft.name)) return fail("A group with that name already exists.");
   const next = structuredClone(store);
   next.groups.push({
     id: crypto.randomUUID(),
-    name,
-    approvalMode: input.approvalMode as Group["approvalMode"],
+    name: draft.name,
+    approvalMode: draft.approvalMode,
+    grantsAdmin: false,
+    membersCanReturn: draft.membersCanReturn,
   });
   return { ok: true, value: next };
 }
 
-export function updateGroup(
-  store: StoreData,
-  actor: User,
-  groupId: string,
-  input: { name: string; approvalMode: string },
-): Result<StoreData> {
+export function updateGroup(store: StoreData, actor: User, groupId: string, input: GroupDraft): Result<StoreData> {
   const denied = permissionError(actor);
   if (denied) return fail(denied);
   const existing = store.groups.find((group) => group.id === groupId);
   if (!existing) return fail("That group was not found.");
-  const name = input.name.trim();
-  if (!name) return fail("Enter a group name.");
-  if (!APPROVAL_MODES.has(input.approvalMode)) return fail("Choose an approval mode.");
-  if (store.groups.some((group) => group.id !== groupId && group.name.toLowerCase() === name.toLowerCase())) {
-    return fail("A group with that name already exists.");
-  }
+  const draft = readGroupDraft(input);
+  if (typeof draft === "string") return fail(draft);
+  if (groupNameTaken(store, draft.name, groupId)) return fail("A group with that name already exists.");
   const next = structuredClone(store);
   const group = next.groups.find((entry) => entry.id === groupId);
   if (!group) return fail("That group was not found.");
-  group.name = name;
-  group.approvalMode = input.approvalMode as Group["approvalMode"];
+  group.name = draft.name;
+  group.approvalMode = draft.approvalMode;
+  group.membersCanReturn = draft.membersCanReturn;
   return { ok: true, value: next };
 }
 
-export type UserDraft = {
-  displayName: string;
-  role: string;
-  groupId: string;
-};
-
-export function validateUserDraft(store: StoreData, draft: UserDraft, exceptId?: string): string | null {
-  const displayName = draft.displayName.trim();
-  if (!displayName) return "Enter a name.";
-  if (!ROLES.has(draft.role as Role)) return "Choose a role.";
-  if (!store.groups.some((group) => group.id === draft.groupId)) return "Choose a group.";
-  if (draft.role !== "admin") {
-    const remainingAdmins = store.users.filter((user) => user.role === "admin" && user.id !== exceptId);
-    const current = exceptId ? store.users.find((user) => user.id === exceptId) : undefined;
-    if (current?.role === "admin" && remainingAdmins.length === 0) {
-      return "There must be at least one administrator.";
-    }
-  }
-  return null;
-}
-
-export function createUser(store: StoreData, actor: User, draft: UserDraft): Result<{ store: StoreData; user: User }> {
+export function addAccessCode(
+  store: StoreData,
+  actor: User,
+  groupId: string,
+  displayName: string,
+  code: string,
+  codeHash: string,
+): Result<{ store: StoreData; user: User }> {
   const denied = permissionError(actor);
   if (denied) return fail(denied);
-  const error = validateUserDraft(store, draft);
-  if (error) return fail(error);
+  const name = displayName.trim();
+  if (!name) return fail("Enter a name.");
+  const group = store.groups.find((entry) => entry.id === groupId);
+  if (!group) return fail("That group was not found.");
   const user: User = {
     id: crypto.randomUUID(),
-    displayName: draft.displayName.trim(),
-    role: draft.role as Role,
-    groupId: draft.groupId,
+    displayName: name,
+    role: roleForGroup(group),
+    groupId,
   };
   const next = structuredClone(store);
   next.users.push(user);
+  next.credentials.push({ userId: user.id, codeHash, code });
   return { ok: true, value: { store: next, user } };
 }
 
-export function updateUser(store: StoreData, actor: User, userId: string, draft: UserDraft): Result<StoreData> {
+export function renameAccessCode(store: StoreData, actor: User, userId: string, displayName: string): Result<StoreData> {
   const denied = permissionError(actor);
   if (denied) return fail(denied);
-  if (!store.users.some((user) => user.id === userId)) return fail("That person was not found.");
-  const error = validateUserDraft(store, draft, userId);
-  if (error) return fail(error);
+  const name = displayName.trim();
+  if (!name) return fail("Enter a name.");
+  const credential = store.credentials.find((entry) => entry.userId === userId);
+  if (!credential) return fail("That access code was not found.");
   const next = structuredClone(store);
   const user = next.users.find((entry) => entry.id === userId);
   if (!user) return fail("That person was not found.");
-  user.displayName = draft.displayName.trim();
-  user.role = draft.role as Role;
-  user.groupId = draft.groupId;
+  user.displayName = name;
+  return { ok: true, value: next };
+}
+
+export function replaceAccessCode(
+  store: StoreData,
+  actor: User,
+  userId: string,
+  code: string,
+  codeHash: string,
+): Result<StoreData> {
+  const denied = permissionError(actor);
+  if (denied) return fail(denied);
+  if (!store.users.some((user) => user.id === userId)) return fail("That person was not found.");
+  if (!store.credentials.some((credential) => credential.userId === userId)) {
+    return fail("That access code was not found.");
+  }
+  const next = structuredClone(store);
+  const credential = next.credentials.find((entry) => entry.userId === userId);
+  if (!credential) return fail("That access code was not found.");
+  credential.code = code;
+  credential.codeHash = codeHash;
+  return { ok: true, value: next };
+}
+
+export function removeAccessCode(store: StoreData, actor: User, userId: string): Result<StoreData> {
+  const denied = permissionError(actor);
+  if (denied) return fail(denied);
+  const person = store.users.find((user) => user.id === userId);
+  if (!person) return fail("That person was not found.");
+  const credential = store.credentials.find((entry) => entry.userId === userId);
+  if (!credential) return fail("That access code was not found.");
+  const group = store.groups.find((entry) => entry.id === person.groupId);
+  if (group?.grantsAdmin) {
+    const remaining = store.credentials.filter((entry) => {
+      if (entry.userId === userId) return false;
+      const owner = store.users.find((user) => user.id === entry.userId);
+      return owner?.groupId === group.id;
+    });
+    if (remaining.length === 0) {
+      return fail(`The last code in ${group.name} cannot be removed.`);
+    }
+  }
+  const next = structuredClone(store);
+  next.credentials = next.credentials.filter((entry) => entry.userId !== userId);
   return { ok: true, value: next };
 }
 

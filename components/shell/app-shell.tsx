@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { logout } from "@/src/actions/auth";
 import type { HelpAudience } from "@/src/content/help";
 import { HelpButton } from "@/components/help/help-button";
 import { useCart } from "@/components/member/cart-provider";
-import { buttonClass } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 
 type NavItem = { href: string; label: string; count?: number };
@@ -64,6 +65,11 @@ export function AppShell({
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-muted sm:inline">{personName}</span>
+            <form action={logout}>
+              <Button type="submit" variant="secondary">
+                Log out
+              </Button>
+            </form>
             <HelpButton audience={audience} />
           </div>
         </header>

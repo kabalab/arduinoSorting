@@ -17,7 +17,6 @@ const adminNav = [
   { href: "/admin/requests", label: "Requests" },
   { href: "/admin/checked-out", label: "Checked out" },
   { href: "/admin/groups", label: "Groups" },
-  { href: "/admin/users", label: "Users / Access" },
   { href: "/admin/history", label: "History" },
   { href: "/admin/settings", label: "Settings" },
 ];

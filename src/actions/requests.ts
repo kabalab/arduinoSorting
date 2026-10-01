@@ -2,7 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { getRepository } from "@/src/data";
-import { approveRequest, cancelRequest, denyRequest, returnItems, submitRequest, type QuantityLine } from "@/src/domain";
+import {
+  adminCheckout,
+  approveRequest,
+  cancelRequest,
+  denyRequest,
+  returnItems,
+  submitRequest,
+  type QuantityLine,
+} from "@/src/domain";
 import { loadContext } from "@/src/server/context";
 import type { ActionResult } from "./result";
 
@@ -62,6 +70,21 @@ export async function denyPending(requestId: string, reason: string): Promise<Ac
     const outcome = denyRequest(store, actor, requestId, reason);
     if (!outcome.ok) return { store, result: { ok: false, error: outcome.error } };
     return { store: outcome.value, result: { ok: true, message: "Request denied." } };
+  });
+  if (result.ok) refresh();
+  return result;
+}
+
+export async function checkoutForGroup(groupId: string, lines: QuantityLine[], expectedReturn: string): Promise<ActionResult> {
+  const { user } = await loadContext();
+  const result = await getRepository().update<ActionResult>((store) => {
+    const actor = store.users.find((entry) => entry.id === user.id);
+    if (!actor) return { store, result: { ok: false, error: "Your session expired. Sign in again." } };
+    const outcome = adminCheckout(store, actor, { groupId, lines, expectedReturn }, new Date());
+    if (!outcome.ok) return { store, result: { ok: false, error: outcome.error } };
+    const created = outcome.value.requests.at(-1);
+    const name = outcome.value.groups.find((entry) => entry.id === created?.groupId)?.name ?? "the group";
+    return { store: outcome.value, result: { ok: true, message: `Checked out to ${name}.` } };
   });
   if (result.ok) refresh();
   return result;

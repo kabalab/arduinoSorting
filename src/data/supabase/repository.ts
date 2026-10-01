@@ -14,7 +14,7 @@ import type { Repository } from "@/src/data/repository";
  * - ledger
  * - requests
  * - request lines
- * - credentials (server-only access-code hashes)
+ * - credentials (server-only access-code hashes, plus the code itself when an admin must be able to view it)
  *
  * Row Level Security should later match the checks server actions already
  * make: members can read shared items except those blacklisted for their

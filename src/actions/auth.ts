@@ -19,8 +19,10 @@ export async function login(_previous: ActionResult | null, formData: FormData):
   }
   if (!matched) return { ok: false, error: "That access code is not recognized." };
 
-  await setSession(matched.id, matched.role);
-  redirect(matched.role === "admin" ? "/admin" : "/dashboard");
+  const group = store.groups.find((entry) => entry.id === matched.groupId);
+  const role = group?.grantsAdmin ? "admin" : "member";
+  await setSession(matched.id, role);
+  redirect(role === "admin" ? "/admin" : "/dashboard");
 }
 
 export async function logout(): Promise<void> {

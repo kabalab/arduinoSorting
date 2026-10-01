@@ -1,5 +1,5 @@
 import { isDateOnly, todayDateString } from "./overdue";
-import { canRequestItem, permissionError } from "./permissions";
+import { canRequestItem, canReturnRequest, permissionError } from "./permissions";
 import {
   fail,
   lineOutstanding,
@@ -31,11 +31,19 @@ function mergeLines(lines: QuantityLine[]): Map<string, number> | string {
   return merged;
 }
 
-function availabilityError(store: StoreData, groupId: string, merged: Map<string, number>): string | null {
+function expectedReturnError(expectedReturn: string, now: Date): string | null {
+  if (!expectedReturn.trim()) return "Enter an expected return date.";
+  if (!isDateOnly(expectedReturn) || expectedReturn < todayDateString(now)) {
+    return "Choose an expected return date that is today or later.";
+  }
+  return null;
+}
+
+function availabilityError(store: StoreData, groupId: string | null, merged: Map<string, number>): string | null {
   for (const [itemId, quantity] of merged) {
     const item = store.items.find((entry) => entry.id === itemId);
     if (!item) return "A selected supply was not found.";
-    if (!canRequestItem(item, groupId)) return `Your group cannot request ${item.name}.`;
+    if (groupId && !canRequestItem(item, groupId)) return `Your group cannot request ${item.name}.`;
     if (quantity > item.available) {
       const verb = item.available === 1 ? "is" : "are";
       return `Only ${item.available} ${item.name} ${verb} available.`;
@@ -53,10 +61,8 @@ export function cartSubmitError(
 ): string | null {
   const group = groupOf(store, user);
   if (!group) return "Your group was not found.";
-  if (!expectedReturn.trim()) return "Enter an expected return date.";
-  if (!isDateOnly(expectedReturn) || expectedReturn < todayDateString(now)) {
-    return "Choose an expected return date that is today or later.";
-  }
+  const dateError = expectedReturnError(expectedReturn, now);
+  if (dateError) return dateError;
   const merged = mergeLines(lines);
   if (typeof merged === "string") return merged;
   return availabilityError(store, user.groupId, merged);
@@ -139,6 +145,42 @@ export function submitRequest(
   return { ok: true, value: next };
 }
 
+export function adminCheckout(
+  store: StoreData,
+  actor: User,
+  input: { groupId: string; lines: QuantityLine[]; expectedReturn: string },
+  now: Date,
+): Result<StoreData> {
+  const denied = permissionError(actor);
+  if (denied) return fail(denied);
+  const group = store.groups.find((entry) => entry.id === input.groupId);
+  if (!group) return fail("Choose a group.");
+  const dateError = expectedReturnError(input.expectedReturn, now);
+  if (dateError) return fail(dateError);
+  const merged = mergeLines(input.lines);
+  if (typeof merged === "string") return fail(merged);
+  const stockError = availabilityError(store, null, merged);
+  if (stockError) return fail(stockError);
+
+  const next = structuredClone(store);
+  const requestId = crypto.randomUUID();
+  const stamped = now.toISOString();
+  const request: EquipmentRequest = {
+    id: requestId,
+    groupId: group.id,
+    requesterId: actor.id,
+    createdAt: stamped,
+    expectedReturn: input.expectedReturn,
+    status: "checked_out",
+    approvedAt: stamped,
+    approvedBy: actor.id,
+    checkedOutAt: stamped,
+    lines: checkoutLines(next, merged, actor.id, requestId, now),
+  };
+  next.requests.push(request);
+  return { ok: true, value: next };
+}
+
 export function approveRequest(
   store: StoreData,
   actor: User,
@@ -208,10 +250,10 @@ export function returnItems(
   quantities: QuantityLine[],
   now: Date,
 ): Result<StoreData> {
-  const denied = permissionError(actor);
-  if (denied) return fail(denied);
   const existing = store.requests.find((request) => request.id === requestId);
   if (!existing) return fail("That request was not found.");
+  const denied = canReturnRequest(store, actor, existing);
+  if (denied) return fail(denied);
   if (existing.status !== "checked_out") return fail("Only a checked-out request can be returned.");
 
   const merged = new Map<string, number>();
