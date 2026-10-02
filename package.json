@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/domain/domain.test.ts"
+    "test": "tsx --test src/domain/domain.test.ts src/data/local/reset-code.test.ts src/data/local/code-seal.test.ts"
   },
   "dependencies": {
     "next": "16.3.8",

@@ -34,10 +34,12 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local equipment store and one-time demo codes
+# local equipment store, one-time demo codes, and the private reset code
 /data/store.json
 /data/store.json.tmp
 /data/initial-codes.txt
+/data/reset-code.txt
+/data/code-key
 
 # vercel
 .vercel

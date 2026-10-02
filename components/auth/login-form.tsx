@@ -11,6 +11,7 @@ export function LoginForm() {
     <form action={action} className="space-y-4">
       <Input label="Access code" name="code" type="password" autoComplete="current-password" required />
       {state && !state.ok ? <p className="text-sm text-danger">{state.error}</p> : null}
+      {state?.ok ? <p className="text-sm">{state.message}</p> : null}
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Checking…" : "Continue"}
       </Button>

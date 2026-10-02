@@ -36,7 +36,7 @@ export type User = {
 export type Credential = {
   userId: string;
   codeHash: string;
-  /** Stored so an administrator can view it. Absent when only a hash was saved. */
+  /** Plain code in memory so an administrator can view it. Encrypted when written to disk. Absent when only a hash was saved. */
   code?: string;
 };
 

@@ -14,6 +14,8 @@ npm run dev
 
 On Windows, copy `.env.example` to `.env.local` and set `SESSION_SECRET`. The first page load seeds demo groups, supplies, one pending request, and one overdue checkout. Access codes are printed once in the server log and written to `data/initial-codes.txt`. That file and `data/store.json` stay on this machine.
 
+The first load also writes `data/reset-code.txt` and marks it read-only. That file is not in the repo. Entering its reset code on the login screen restores the original access codes. The app never rewrites the file.
+
 ## Layout
 
 - `app/` and `components/` — pages and interface

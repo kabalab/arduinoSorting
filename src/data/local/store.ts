@@ -3,6 +3,8 @@ import path from "node:path";
 import { ensureAccessModel } from "@/src/domain/records";
 import type { StoreData } from "@/src/domain/types";
 import type { Repository } from "@/src/data/repository";
+import { CODE_KEY_PATH, loadCodeKey, openCredentials, sealCredentials, storeHasSealedCode } from "./code-seal";
+import { ensureResetFile } from "./reset-code";
 import { createSeed, STORE_PATH } from "./seed";
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -17,26 +19,34 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 }
 
 async function loadOrSeed(): Promise<StoreData> {
+  const store = await readOrSeed();
+  await ensureResetFile(store.users);
+  return store;
+}
+
+async function readOrSeed(): Promise<StoreData> {
   try {
     const raw = await readFile(STORE_PATH, "utf8");
     const parsed = JSON.parse(raw) as StoreData;
-    const normalized = ensureAccessModel(parsed);
-    if (normalized.changed) await persist(normalized.store);
+    const key = await loadCodeKey(CODE_KEY_PATH, !storeHasSealedCode(parsed));
+    const opened = openCredentials(parsed, key);
+    const normalized = ensureAccessModel(opened.store);
+    if (normalized.changed || opened.reseal) await persist(normalized.store, key);
     return normalized.store;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") throw error;
     const seeded = await createSeed();
-    await mkdir(path.dirname(STORE_PATH), { recursive: true });
-    await writeFile(STORE_PATH, JSON.stringify(seeded, null, 2), "utf8");
+    await persist(seeded);
     return seeded;
   }
 }
 
-async function persist(store: StoreData): Promise<void> {
+async function persist(store: StoreData, key?: Buffer): Promise<void> {
+  const sealed = sealCredentials(store, key ?? (await loadCodeKey()));
   await mkdir(path.dirname(STORE_PATH), { recursive: true });
   const temporary = `${STORE_PATH}.tmp`;
-  await writeFile(temporary, JSON.stringify(store, null, 2), "utf8");
+  await writeFile(temporary, JSON.stringify(sealed, null, 2), "utf8");
   try {
     await rename(temporary, STORE_PATH);
   } catch {
